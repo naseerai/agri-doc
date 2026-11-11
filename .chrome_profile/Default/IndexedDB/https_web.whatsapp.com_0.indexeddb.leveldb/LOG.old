@@ -1,0 +1,20 @@
+2026/11/11-17:02:48.941 21d933 Reusing MANIFEST /Users/shaiknaseerali/Documents/Edunet-Foundation/Projects/Agri-doc/.chrome_profile/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/11/11-17:02:48.941 21d933 Recovering log #112
+2026/11/11-17:02:48.942 21d933 Reusing old log /Users/shaiknaseerali/Documents/Edunet-Foundation/Projects/Agri-doc/.chrome_profile/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000112.log 
+2026/11/11-17:02:49.057 21d938 Compacting 1@1 + 10@2 files
+2026/11/11-17:02:49.117 21d938 Generated table #116@1: 50114 keys, 2206471 bytes
+2026/11/11-17:02:49.151 21d938 Generated table #117@1: 59435 keys, 2230672 bytes
+2026/11/11-17:02:49.179 21d938 Generated table #118@1: 36465 keys, 2015104 bytes
+2026/11/11-17:02:49.179 21d938 Compacted 1@1 + 10@2 files => 6452247 bytes
+2026/11/11-17:02:49.181 21d938 compacted to: files[ 0 0 3 0 0 0 0 ]
+2026/11/11-17:02:49.181 21d938 Delete type=2 #114
+2026/11/11-17:02:49.181 21d938 Delete type=2 #110
+2026/11/11-17:02:49.181 21d938 Delete type=2 #104
+2026/11/11-17:02:49.181 21d938 Delete type=2 #105
+2026/11/11-17:02:49.181 21d938 Delete type=2 #111
+2026/11/11-17:02:49.181 21d938 Delete type=2 #107
+2026/11/11-17:02:49.181 21d938 Delete type=2 #73
+2026/11/11-17:02:49.181 21d938 Delete type=2 #66
+2026/11/11-17:02:49.181 21d938 Delete type=2 #106
+2026/11/11-17:02:49.181 21d938 Delete type=2 #31
+2026/11/11-17:02:49.181 21d938 Delete type=2 #80
