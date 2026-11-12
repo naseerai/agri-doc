@@ -507,24 +507,24 @@ def _init():
         "last_combined":    None,
         "last_img_bytes":   None,
         "last_img_name":    None,
-        # API (UI defaults to active credentials from .env)
-        "gemini_key_ui":    GEMINI_API_KEY,
+        # API keys — NEVER pre-filled in the UI; always loaded from .env at runtime
+        "gemini_key_ui":    "",
         "gemini_model_ui":  GEMINI_MODEL_ID,
-        "groq_key_ui":      GROQ_API_KEY,
+        "groq_key_ui":      "",
         "groq_model_ui":    GROQ_MODEL_ID,
-        "wx_key_ui":        WATSONX_API_KEY,
-        "wx_proj_ui":       WATSONX_PROJECT_ID,
+        "wx_key_ui":        "",
+        "wx_proj_ui":       "",
         "wx_url_ui":        WATSONX_URL,
         "wx_model_ui":      WATSONX_MODEL_ID,
         # WhatsApp
         "wa_phone":         DEFAULT_WA_PHONE or "",
         "wa_web_opened":    False,
-        "twilio_sid":       TWILIO_ACCOUNT_SID or "",
-        "twilio_token":     TWILIO_AUTH_TOKEN or "",
+        "twilio_sid":       "",
+        "twilio_token":     "",
         "twilio_from":      TWILIO_FROM_NUMBER or "whatsapp:+14155238886",
         # WhatsApp Business Cloud API (Meta)
-        "wa_access_token":  WHATSAPP_ACCESS_TOKEN or "",
-        "wa_phone_num_id":  WHATSAPP_PHONE_NUMBER_ID or "",
+        "wa_access_token":  "",
+        "wa_phone_num_id":  "",
         # WhatsApp Agent
         "last_wa_delivery": None,   # Dict from WhatsAppReportAgent.run()
     }
@@ -532,29 +532,19 @@ def _init():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # Ensure existing blank session keys sync with loaded .env values
-    if not st.session_state.get("gemini_key_ui") and GEMINI_API_KEY:
-        st.session_state["gemini_key_ui"] = GEMINI_API_KEY
+    # Sync only non-secret settings (model IDs, URLs, phone numbers) from .env
     if not st.session_state.get("gemini_model_ui") and GEMINI_MODEL_ID:
         st.session_state["gemini_model_ui"] = GEMINI_MODEL_ID
-    if not st.session_state.get("groq_key_ui") and GROQ_API_KEY:
-        st.session_state["groq_key_ui"] = GROQ_API_KEY
     if not st.session_state.get("groq_model_ui") and GROQ_MODEL_ID:
         st.session_state["groq_model_ui"] = GROQ_MODEL_ID
-    if not st.session_state.get("wx_key_ui") and WATSONX_API_KEY:
-        st.session_state["wx_key_ui"] = WATSONX_API_KEY
-    if not st.session_state.get("wx_proj_ui") and WATSONX_PROJECT_ID:
-        st.session_state["wx_proj_ui"] = WATSONX_PROJECT_ID
+    if not st.session_state.get("wx_url_ui") and WATSONX_URL:
+        st.session_state["wx_url_ui"] = WATSONX_URL
+    if not st.session_state.get("wx_model_ui") and WATSONX_MODEL_ID:
+        st.session_state["wx_model_ui"] = WATSONX_MODEL_ID
     if not st.session_state.get("wa_phone") and DEFAULT_WA_PHONE:
         st.session_state["wa_phone"] = DEFAULT_WA_PHONE
-    if not st.session_state.get("twilio_sid") and TWILIO_ACCOUNT_SID:
-        st.session_state["twilio_sid"] = TWILIO_ACCOUNT_SID
-    if not st.session_state.get("twilio_token") and TWILIO_AUTH_TOKEN:
-        st.session_state["twilio_token"] = TWILIO_AUTH_TOKEN
-    if not st.session_state.get("wa_access_token") and WHATSAPP_ACCESS_TOKEN:
-        st.session_state["wa_access_token"] = WHATSAPP_ACCESS_TOKEN
-    if not st.session_state.get("wa_phone_num_id") and WHATSAPP_PHONE_NUMBER_ID:
-        st.session_state["wa_phone_num_id"] = WHATSAPP_PHONE_NUMBER_ID
+    if not st.session_state.get("twilio_from") and TWILIO_FROM_NUMBER:
+        st.session_state["twilio_from"] = TWILIO_FROM_NUMBER
 
 _init()
 
@@ -563,13 +553,15 @@ _init()
 #  Helpers
 # ══════════════════════════════════════════════════════════════════════════════
 def _C():
+    # API keys always come from .env (never from UI session state)
+    # Model IDs / URLs may be overridden via the Settings UI
     return dict(
-        gemini_key   = st.session_state.gemini_key_ui   or GEMINI_API_KEY,
+        gemini_key   = GEMINI_API_KEY,
         gemini_model = st.session_state.gemini_model_ui or GEMINI_MODEL_ID,
-        groq_key     = st.session_state.groq_key_ui     or GROQ_API_KEY,
+        groq_key     = GROQ_API_KEY,
         groq_model   = st.session_state.groq_model_ui   or GROQ_MODEL_ID,
-        wx_key       = st.session_state.wx_key_ui       or WATSONX_API_KEY,
-        wx_proj      = st.session_state.wx_proj_ui      or WATSONX_PROJECT_ID,
+        wx_key       = WATSONX_API_KEY,
+        wx_proj      = WATSONX_PROJECT_ID,
         wx_url       = st.session_state.wx_url_ui       or WATSONX_URL,
         wx_model     = st.session_state.wx_model_ui     or WATSONX_MODEL_ID,
     )
@@ -611,10 +603,10 @@ def _sidebar():
                 f"<b style='color:#d1fae5!important'>{lbl}</b> {val}</span></div>",
                 unsafe_allow_html=True)
 
-        gem_ok = bool(C["gemini_key"])
-        ibm_ok = bool(C["wx_key"] and C["wx_proj"])
+        gem_ok = bool(GEMINI_API_KEY)
+        ibm_ok = bool(WATSONX_API_KEY and WATSONX_PROJECT_ID)
         sdot("sd-g" if gem_ok else "sd-r", "Gemini",
-             f"{C['gemini_model']}" if gem_ok else "→ Settings")
+             f"{C['gemini_model']}" if gem_ok else "→ .env")
         sdot("sd-g" if ibm_ok else "sd-r", "IBM",
              "Connected" if ibm_ok else "Not configured")
         _wa_last = st.session_state.get("last_wa_delivery")
@@ -872,10 +864,10 @@ def page_home():
         _lottie(LOTTIE_GIRL, "hero_girl", h=290, q="high")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    if not C["gemini_key"]:
+    if not GEMINI_API_KEY:
         st.warning(
-            "🔑 **Gemini key not configured.** Go to ⚙️ Settings → Gemini Vision to add your free key "
-            "from [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)", icon="⚠️")
+            "🔑 **Gemini key not configured.** Add `GEMINI_API_KEY` to your `.env` file and restart the app.",
+            icon="⚠️")
 
     # ── Stats ─────────────────────────────────────────────────────────────────
     stats = get_diagnosis_stats()
@@ -1583,33 +1575,23 @@ def page_guardrails():
 # ══════════════════════════════════════════════════════════════════════════════
 def page_settings():
     def _save_all():
+        # Only save non-secret values (model IDs, URLs) via the UI
+        # API keys are managed exclusively via the .env file
         updates = {}
-        if st.session_state.gemini_key_ui:
-            updates["GEMINI_API_KEY"] = st.session_state.gemini_key_ui
         if st.session_state.gemini_model_ui:
             updates["GEMINI_MODEL_ID"] = st.session_state.gemini_model_ui
-        if st.session_state.groq_key_ui:
-            updates["GROQ_API_KEY"] = st.session_state.groq_key_ui
         if st.session_state.groq_model_ui:
             updates["GROQ_MODEL_ID"] = st.session_state.groq_model_ui
-        if st.session_state.wx_key_ui:
-            updates["WATSONX_API_KEY"] = st.session_state.wx_key_ui
-        if st.session_state.wx_proj_ui:
-            updates["WATSONX_PROJECT_ID"] = st.session_state.wx_proj_ui
         if st.session_state.wx_url_ui:
             updates["WATSONX_URL"] = st.session_state.wx_url_ui
         if st.session_state.wx_model_ui:
             updates["WATSONX_MODEL_ID"] = st.session_state.wx_model_ui
         if st.session_state.wa_phone:
             updates["DEFAULT_WA_PHONE"] = st.session_state.wa_phone
-        if st.session_state.twilio_sid:
-            updates["TWILIO_ACCOUNT_SID"] = st.session_state.twilio_sid
-        if st.session_state.twilio_token:
-            updates["TWILIO_AUTH_TOKEN"] = st.session_state.twilio_token
         if st.session_state.twilio_from:
             updates["TWILIO_FROM_NUMBER"] = st.session_state.twilio_from
         save_env_variables(updates)
-        st.success("✅ All API credentials and settings saved permanently to your `.env` file! They will persist across reboots and browser refreshes.")
+        st.success("✅ Settings saved to `.env` — model IDs and URLs updated.")
 
     # ── Header Banner ────────────────────────────────────────────────────────
     col_hdr, col_btn = st.columns([3, 1])
@@ -1632,83 +1614,79 @@ def page_settings():
     # ── TAB 1: Gemini & Groq ──────────────────────────────────────────────────
     with t1:
         st.markdown("#### 🌿 Google Gemini Vision (Primary Pathologist)")
-        st.info(f"**Current active model:** `{st.session_state.gemini_model_ui or GEMINI_MODEL_ID}` · Free key: https://aistudio.google.com/app/apikey")
-        c1, c2 = st.columns(2)
-        with c1:
-            gk = st.text_input("Gemini API Key", type="password",
-                               value=st.session_state.gemini_key_ui, placeholder="AQ.Ab8… or AIzaSy…", key="g_key")
-            st.session_state.gemini_key_ui = gk
-        with c2:
-            gm = st.text_input("Gemini Model ID",
-                               value=st.session_state.gemini_model_ui or GEMINI_MODEL_ID,
-                               help="Recommended: gemini-2.5-flash or gemini-2.0-flash", key="g_mdl")
-            st.session_state.gemini_model_ui = gm
+        # API key status — loaded from .env, never shown
+        gem_configured = bool(GEMINI_API_KEY)
+        if gem_configured:
+            st.success("🔑 **Gemini API Key:** Configured via `.env` (hidden for security)")
+        else:
+            st.error("🔑 **Gemini API Key:** Not set — add `GEMINI_API_KEY` to your `.env` file.")
+        gm = st.text_input("Gemini Model ID",
+                           value=st.session_state.gemini_model_ui or GEMINI_MODEL_ID,
+                           help="Recommended: gemini-2.5-flash or gemini-2.0-flash", key="g_mdl")
+        st.session_state.gemini_model_ui = gm
 
         b_t1, b_s1 = st.columns([1, 1])
         with b_t1:
             if st.button("🧪 Test Gemini Connection", key="t_gem", use_container_width=True):
                 with st.spinner("Testing Gemini connection…"):
                     ok, msg = test_gemini_connection(
-                        api_key=st.session_state.gemini_key_ui or GEMINI_API_KEY,
+                        api_key=GEMINI_API_KEY,
                         model=st.session_state.gemini_model_ui or GEMINI_MODEL_ID)
                 (st.success if ok else st.error)(f"{'✅' if ok else '❌'} {msg}")
         with b_s1:
-            if st.button("💾 Save Gemini Credentials to .env", key="save_gem_btn", use_container_width=True):
-                save_env_variables({
-                    "GEMINI_API_KEY": st.session_state.gemini_key_ui,
-                    "GEMINI_MODEL_ID": st.session_state.gemini_model_ui,
-                })
-                st.success("✅ Gemini API key and model saved permanently to `.env`!")
+            if st.button("💾 Save Gemini Model to .env", key="save_gem_btn", use_container_width=True):
+                save_env_variables({"GEMINI_MODEL_ID": st.session_state.gemini_model_ui})
+                st.success("✅ Gemini model ID saved to `.env`!")
 
         st.markdown("---")
         st.markdown("#### ⚡ Groq Vision (Automatic Fallback)")
         st.caption("Groq acts as the high-speed fallback if Gemini experiences rate-limits or network interruptions.")
-        c3, c4 = st.columns(2)
-        with c3:
-            gqk = st.text_input("Groq API Key", type="password",
-                                value=st.session_state.groq_key_ui, placeholder="gsk_…", key="gq_key")
-            st.session_state.groq_key_ui = gqk
-        with c4:
-            gqm = st.text_input("Groq Model ID",
-                                value=st.session_state.groq_model_ui or GROQ_MODEL_ID,
-                                help="Recommended: qwen/qwen3.8-27b", key="gq_mdl")
-            st.session_state.groq_model_ui = gqm
+        groq_configured = bool(GROQ_API_KEY)
+        if groq_configured:
+            st.success("🔑 **Groq API Key:** Configured via `.env` (hidden for security)")
+        else:
+            st.error("🔑 **Groq API Key:** Not set — add `GROQ_API_KEY` to your `.env` file.")
+        gqm = st.text_input("Groq Model ID",
+                            value=st.session_state.groq_model_ui or GROQ_MODEL_ID,
+                            help="Recommended: qwen/qwen3.8-27b", key="gq_mdl")
+        st.session_state.groq_model_ui = gqm
 
         b_t2, b_s2 = st.columns([1, 1])
         with b_t2:
             if st.button("🧪 Test Groq Connection", key="t_groq", use_container_width=True):
                 with st.spinner("Testing Groq connection…"):
                     ok, msg = test_groq_connection(
-                        api_key=st.session_state.groq_key_ui or GROQ_API_KEY,
+                        api_key=GROQ_API_KEY,
                         model=st.session_state.groq_model_ui or GROQ_MODEL_ID)
                 (st.success if ok else st.error)(f"{'✅' if ok else '❌'} {msg}")
         with b_s2:
-            if st.button("💾 Save Groq Credentials to .env", key="save_groq_btn", use_container_width=True):
-                save_env_variables({
-                    "GROQ_API_KEY": st.session_state.groq_key_ui,
-                    "GROQ_MODEL_ID": st.session_state.groq_model_ui,
-                })
-                st.success("✅ Groq credentials saved permanently to `.env`!")
+            if st.button("💾 Save Groq Model to .env", key="save_groq_btn", use_container_width=True):
+                save_env_variables({"GROQ_MODEL_ID": st.session_state.groq_model_ui})
+                st.success("✅ Groq model ID saved to `.env`!")
 
     # ── TAB 2: IBM watsonx ───────────────────────────────────────────────────
     with t2:
         st.markdown("#### 🏛️ IBM watsonx.ai (Extension Officer Agent)")
-        st.info(f"**Current model:** `{st.session_state.wx_model_ui or WATSONX_MODEL_ID}` · Generates agronomic advisories & treatment steps")
-        c1, c2 = st.columns(2)
-        with c1:
-            wk = st.text_input("IBM Cloud API Key", type="password",
-                               value=st.session_state.wx_key_ui, placeholder="IBM Cloud API key", key="wx_k")
-            st.session_state.wx_key_ui = wk
-            wp = st.text_input("watsonx Project ID",
-                               value=st.session_state.wx_proj_ui or WATSONX_PROJECT_ID,
-                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", key="wx_p")
-            st.session_state.wx_proj_ui = wp
-        with c2:
+        # API key / project status — loaded from .env, never shown
+        ibm_key_ok  = bool(WATSONX_API_KEY)
+        ibm_proj_ok = bool(WATSONX_PROJECT_ID)
+        if ibm_key_ok:
+            st.success("🔑 **IBM API Key:** Configured via `.env` (hidden for security)")
+        else:
+            st.error("🔑 **IBM API Key:** Not set — add `WATSONX_API_KEY` to your `.env` file.")
+        if ibm_proj_ok:
+            st.success(f"🗂️ **Project ID:** Configured via `.env` (hidden for security)")
+        else:
+            st.error("🗂️ **Project ID:** Not set — add `WATSONX_PROJECT_ID` to your `.env` file.")
+
+        c2_col1, c2_col2 = st.columns(2)
+        with c2_col1:
             wu = st.text_input("watsonx URL", value=st.session_state.wx_url_ui or WATSONX_URL, key="wx_u")
             st.session_state.wx_url_ui = wu
-            wm = st.text_input("IBM Granite Model ID",
+        with c2_col2:
+            wm = st.text_input("IBM Model ID",
                                value=st.session_state.wx_model_ui or WATSONX_MODEL_ID,
-                               help="e.g. ibm/granite-4-0-tiny-preview or ibm/granite-13b-chat-v2", key="wx_m")
+                               help="e.g. openai/gpt-oss-120b or ibm/granite-4-0-tiny-preview", key="wx_m")
             st.session_state.wx_model_ui = wm
 
         b_t3, b_s3 = st.columns([1, 1])
@@ -1716,27 +1694,30 @@ def page_settings():
             if st.button("🧪 Test IBM Connection", key="t_wx", use_container_width=True):
                 with st.spinner("Testing watsonx connection…"):
                     ok, msg = test_watsonx_connection(
-                        api_key=st.session_state.wx_key_ui or WATSONX_API_KEY,
-                        project_id=st.session_state.wx_proj_ui or WATSONX_PROJECT_ID,
+                        api_key=WATSONX_API_KEY,
+                        project_id=WATSONX_PROJECT_ID,
                         url=st.session_state.wx_url_ui or WATSONX_URL,
                         model=st.session_state.wx_model_ui or WATSONX_MODEL_ID)
                 (st.success if ok else st.error)(f"{'✅' if ok else '❌'} {msg}")
         with b_s3:
-            if st.button("💾 Save IBM Credentials to .env", key="save_ibm_btn", use_container_width=True):
+            if st.button("💾 Save IBM Model/URL to .env", key="save_ibm_btn", use_container_width=True):
                 save_env_variables({
-                    "WATSONX_API_KEY": st.session_state.wx_key_ui,
-                    "WATSONX_PROJECT_ID": st.session_state.wx_proj_ui,
                     "WATSONX_URL": st.session_state.wx_url_ui,
                     "WATSONX_MODEL_ID": st.session_state.wx_model_ui,
                 })
-                st.success("✅ IBM watsonx credentials saved permanently to `.env`!")
+                st.success("✅ IBM model ID and URL saved to `.env`!")
 
     # ── TAB 3: Advanced Defaults ─────────────────────────────────────────────
     with t3:
         st.markdown("#### ⚙️ Active Configuration from `.env`")
+        st.info("🔒 API keys are stored securely in `.env` and never displayed here.")
         st.json({
+            "GEMINI_API_KEY": "●●●●●●●●" if GEMINI_API_KEY else "(not set)",
             "GEMINI_MODEL_ID": GEMINI_MODEL_ID,
+            "GROQ_API_KEY": "●●●●●●●●" if GROQ_API_KEY else "(not set)",
             "GROQ_MODEL_ID": GROQ_MODEL_ID,
+            "WATSONX_API_KEY": "●●●●●●●●" if WATSONX_API_KEY else "(not set)",
+            "WATSONX_PROJECT_ID": "●●●●●●●●" if WATSONX_PROJECT_ID else "(not set)",
             "WATSONX_MODEL_ID": WATSONX_MODEL_ID,
             "WATSONX_URL": WATSONX_URL,
             "DEFAULT_WA_PHONE": DEFAULT_WA_PHONE or "(not set)",
@@ -1748,11 +1729,11 @@ def page_settings():
             save_env_variables({
                 "GEMINI_MODEL_ID": "gemini-2.5-flash",
                 "GROQ_MODEL_ID": "qwen/qwen3.8-27b",
-                "WATSONX_MODEL_ID": "ibm/granite-4-0-tiny-preview",
+                "WATSONX_MODEL_ID": "openai/gpt-oss-120b",
             })
             st.session_state.gemini_model_ui = "gemini-2.5-flash"
             st.session_state.groq_model_ui = "qwen/qwen3.8-27b"
-            st.session_state.wx_model_ui = "ibm/granite-4-0-tiny-preview"
+            st.session_state.wx_model_ui = "openai/gpt-oss-120b"
             st.success("✅ Recommended working defaults restored and written to `.env`!")
             st.rerun()
 

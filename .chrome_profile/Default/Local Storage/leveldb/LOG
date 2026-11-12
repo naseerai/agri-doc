@@ -1,6 +1,3 @@
-2026/11/11-17:11:39.599 21fd49 Reusing MANIFEST /Users/shaiknaseerali/Documents/Edunet-Foundation/Projects/Agri-doc/.chrome_profile/Default/Local Storage/leveldb/MANIFEST-000001
-2026/11/11-17:11:39.600 21fd49 Recovering log #3
-2026/11/11-17:11:39.600 21fd49 Reusing old log /Users/shaiknaseerali/Documents/Edunet-Foundation/Projects/Agri-doc/.chrome_profile/Default/Local Storage/leveldb/000003.log 
-2026/11/11-17:12:12.492 21fd4e Level-0 table #5: started
-2026/11/11-17:12:12.495 21fd4e Level-0 table #5: 20271 bytes OK
-2026/11/11-17:12:12.496 21fd4e Delete type=0 #3
+2026/11/12-10:33:31.867 249dc2 Reusing MANIFEST /Users/shaiknaseerali/Documents/Edunet-Foundation/Projects/Agri-doc/.chrome_profile/Default/Local Storage/leveldb/MANIFEST-000001
+2026/11/12-10:33:31.867 249dc2 Recovering log #4
+2026/11/12-10:33:31.868 249dc2 Reusing old log /Users/shaiknaseerali/Documents/Edunet-Foundation/Projects/Agri-doc/.chrome_profile/Default/Local Storage/leveldb/000004.log 
