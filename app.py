@@ -2257,3 +2257,4 @@ elif _p == "📋 History":        page_history()
 elif _p == "📊 Performance":    render_performance_dashboard()
 elif _p == "🛡️ Guardrails":    page_guardrails()
 elif _p == "⚙️ Settings":       page_settings()
+
