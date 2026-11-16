@@ -221,19 +221,22 @@ class WhatsAppSender:
     @staticmethod
     def _chrome_is_usable() -> bool:
         """
-        Return True only when Chrome (or Chromium) is actually executable.
-        SELENIUM_AVAILABLE only tells us the Python package is installed — the
-        binary might still be missing (e.g. Streamlit Cloud, Docker without Chrome).
-        Status code 127 from the OS means 'command not found'.
+        Return True when Chrome/Chromium is executable.
+        Checks PATH names AND known macOS application bundle paths.
         """
-        import shutil
-        return bool(
-            shutil.which("google-chrome") or
-            shutil.which("google-chrome-stable") or
-            shutil.which("chromium") or
-            shutil.which("chromium-browser") or
-            shutil.which("chrome")
-        )
+        import shutil, os as _os
+        # PATH-based check
+        if any(shutil.which(n) for n in
+               ("google-chrome", "google-chrome-stable",
+                "chromium", "chromium-browser", "chrome")):
+            return True
+        # macOS application bundle paths
+        mac_paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+        return any(_os.path.isfile(p) for p in mac_paths)
 
     def detect_best_method(self) -> str:
         """
