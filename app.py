@@ -110,14 +110,56 @@ html, body, [data-testid="stAppViewContainer"],
   border-color: rgba(255,255,255,.08) !important;
   margin: .5rem 0 !important;
 }
+[data-testid="stSidebar"] .block-container,
+[data-testid="stSidebar"] .element-container {
+  background: transparent !important;
+}
+[data-testid="stSidebar"] .stLottie,
+[data-testid="stSidebar"] iframe[title="streamlit_lottie.streamlit_lottie"] {
+  border-radius: 10px;
+  overflow: hidden;
+  display: block;
+  margin: 0 auto;
+}
 
-/* ═══ Lottie — no black box ═══════════════════════════════════════════════ */
-[data-testid="stLottie"], iframe[title="streamlit_lottie"],
-.stLottie, div.stLottie > iframe,
-.element-container iframe, iframe {
+/* ═══ Lottie — transparent, no flash ══════════════════════════════════════ */
+iframe[title="streamlit_lottie.streamlit_lottie"],
+iframe[title="streamlit_lottie"],
+.stLottie iframe {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+}
+
+/* Hero lottie column — dark gradient matching the hero card */
+[data-testid="stHorizontalBlock"]:has(.hero) > [data-testid="column"]:last-child {
+  background: linear-gradient(150deg, var(--darker) 0%, #14532d 55%, #166534 100%) !important;
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  box-shadow: 0 20px 60px rgba(5,46,22,.5) !important;
+  min-height: 300px !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+[data-testid="stHorizontalBlock"]:has(.hero) > [data-testid="column"]:last-child::after {
+  content: '';
+  position: absolute;
+  bottom: -60px; left: -50px;
+  width: 240px; height: 240px;
+  background: radial-gradient(circle, rgba(74,222,128,.13) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Sidebar lottie — subtle rounded card on dark bg */
+[data-testid="stSidebar"] .element-container {
+  background: transparent !important;
+}
+[data-testid="stSidebar"] .stLottie {
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 /* ═══ Top navigation bar ══════════════════════════════════════════════════ */
@@ -145,10 +187,15 @@ html, body, [data-testid="stAppViewContainer"],
   background: linear-gradient(135deg, var(--darker) 0%, #14532d 50%, #166534 100%);
   border-radius: 24px;
   padding: 3rem 3.5rem;
-  margin-bottom: 2.5rem;
+  margin-bottom: 0;
   position: relative;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(5,46,22,.4);
+  height: 100%;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .hero::before {
   content: '';
@@ -156,6 +203,15 @@ html, body, [data-testid="stAppViewContainer"],
   top: -80px; right: -80px;
   width: 360px; height: 360px;
   background: radial-gradient(circle, rgba(74,222,128,.12) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: -40px; left: 20%;
+  width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(74,222,128,.06) 0%, transparent 70%);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -594,7 +650,12 @@ def _sidebar():
             </div>
         </div>""" % APP_VERSION, unsafe_allow_html=True)
 
-        _lottie(LOTTIE_CORN, "sb_corn", h=90, q="low")
+        st.markdown(
+            "<div style='background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.12);"
+            "border-radius:14px;overflow:hidden;margin:0 .5rem .3rem'>",
+            unsafe_allow_html=True)
+        _lottie(LOTTIE_CORN, "sb_corn", h=110, q="medium")
+        st.markdown("</div>", unsafe_allow_html=True)
         st.divider()
 
         # Status pills
@@ -647,6 +708,35 @@ def _sidebar():
         st.session_state.page = sel
 
 _sidebar()
+
+# ── Patch lottie iframe internal backgrounds (same-origin JS injection) ───────
+components.html("""
+<script>
+(function patchLottie() {
+  var LOTTIE_TITLE = 'streamlit_lottie.streamlit_lottie';
+  function patch() {
+    try {
+      var frames = window.parent.document.querySelectorAll('iframe[title="' + LOTTIE_TITLE + '"]');
+      frames.forEach(function(f) {
+        try {
+          var doc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
+          if (doc && doc.body && doc.body.style.background !== 'transparent') {
+            doc.body.style.background = 'transparent';
+            doc.body.style.margin = '0';
+            doc.body.style.padding = '0';
+          }
+        } catch(e) {}
+      });
+    } catch(e) {}
+  }
+  patch();
+  [200, 600, 1200, 2500].forEach(function(t){ setTimeout(patch, t); });
+  try {
+    new MutationObserver(patch).observe(window.parent.document.body, {childList:true, subtree:true});
+  } catch(e) {}
+})();
+</script>
+""", height=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -880,12 +970,9 @@ def page_home():
         """, unsafe_allow_html=True)
 
     with lcol:
-        st.markdown(
-            "<div style='display:flex;align-items:center;justify-content:center;"
-            "min-height:280px;background:transparent'>",
-            unsafe_allow_html=True)
-        _lottie(LOTTIE_GIRL, "hero_girl", h=290, q="high")
-        st.markdown("</div>", unsafe_allow_html=True)
+        _lottie(LOTTIE_GIRL, "hero_girl", h=320, q="high")
+
+    st.markdown("<div style='margin-bottom:2rem'></div>", unsafe_allow_html=True)
 
     if not GEMINI_API_KEY:
         st.warning(

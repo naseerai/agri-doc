@@ -6,6 +6,7 @@ Streamlit components. All metrics displayed here are clearly labelled
 as either "Measured" (from real data) or "Simulated" (illustrative only).
 """
 
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
@@ -15,7 +16,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 
-from database import get_agent_metrics, get_guardrail_events, get_diagnosis_stats
+from database import get_agent_metrics, get_guardrail_events, get_diagnosis_stats, get_recent_diagnoses
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,10 @@ def render_performance_dashboard() -> None:
 
     st.markdown("---")
     _render_simulated_eval_section()
+
+    # ── Diagnosis Reports — always rendered last ──────────────────────────────
+    st.markdown("<div style='margin-top:2.5rem'></div>", unsafe_allow_html=True)
+    _render_diagnosis_reports_section()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -533,3 +538,294 @@ def _render_simulated_eval_section():
             "NLP ground-truth metrics (Accuracy, Precision, F1) require a labelled "
             "test dataset and are not displayed until one is provided."
         )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Diagnosis Reports Section
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _conf_badge(level: str) -> str:
+    """Return a styled HTML badge for a confidence level."""
+    styles = {
+        "High":    ("background:#dcfce7;color:#14532d;border:1px solid #86efac;", "High"),
+        "Medium":  ("background:#fef9c3;color:#713f12;border:1px solid #fde047;", "Medium"),
+        "Low":     ("background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5;", "Low"),
+    }
+    s, lbl = styles.get(level, ("background:#f3f4f6;color:#374151;border:1px solid #d1d5db;", level or "—"))
+    return (
+        f"<span style='display:inline-block;padding:2px 11px;border-radius:100px;"
+        f"font-size:.68rem;font-weight:700;{s}'>{lbl}</span>"
+    )
+
+
+def _sev_color(severity: str) -> str:
+    return {"Mild": "#16a34a", "Moderate": "#d97706",
+            "Severe": "#dc2626", "Unclear": "#6b7280"}.get(severity, "#6b7280")
+
+
+def _render_pathologist_card(p: Dict) -> None:
+    """Render a pathologist report dict as a styled card."""
+    disease  = p.get("suspected_disease", "Unknown")
+    conf     = p.get("confidence_level", "Unclear")
+    severity = p.get("disease_severity", "Unclear")
+    sev_col  = _sev_color(severity)
+
+    st.markdown(
+        f"<div style='background:#fff;border:1px solid #bbf7d0;border-left:4px solid #16a34a;"
+        f"border-radius:0 12px 12px 0;padding:1rem 1.4rem;margin-bottom:.75rem;'>"
+        f"<div style='font-size:1rem;font-weight:800;color:#14532d;margin-bottom:.5rem;'>"
+        f"🦠 {disease}</div>"
+        f"<div style='display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;'>"
+        f"<span>Confidence: {_conf_badge(conf)}</span>"
+        f"<span style='font-size:.82rem;'>Severity: "
+        f"<strong style='color:{sev_col};'>{severity}</strong></span>"
+        f"<span style='font-size:.82rem;'>Lab confirmation: "
+        f"<strong>{'⚠️ Required' if p.get('requires_lab_confirmation') else '✅ Not required'}</strong></span>"
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        if p.get("symptoms_observed"):
+            st.markdown("**🔴 Symptoms Observed**")
+            for s in p["symptoms_observed"]:
+                st.markdown(f"- {s}")
+        if p.get("affected_plant_parts"):
+            st.markdown("**🌿 Affected Parts**")
+            for part in p["affected_plant_parts"]:
+                st.markdown(f"- {part}")
+    with c2:
+        if p.get("possible_causes"):
+            st.markdown("**💡 Possible Causes**")
+            for cause in p["possible_causes"]:
+                st.markdown(f"- {cause}")
+        if p.get("alternative_diagnoses"):
+            st.markdown("**🔄 Alternative Diagnoses**")
+            for alt in p["alternative_diagnoses"]:
+                st.markdown(f"- {alt}")
+
+    if p.get("pathologist_notes"):
+        st.info(f"📋 {p['pathologist_notes']}")
+    if p.get("_confidence_warning"):
+        st.warning(p["_confidence_warning"])
+    st.caption(
+        f"Vision: {p.get('vision_provider', '?')} · "
+        f"Quality: {p.get('image_quality', '?')} · "
+        f"File: {p.get('image_filename', '?')}"
+    )
+
+
+def _render_extension_card(e: Dict) -> None:
+    """Render an extension officer report dict as a styled card."""
+    if e.get("crop_condition_summary"):
+        st.markdown(
+            f"<div style='background:#fff;border:1px solid #bbf7d0;border-left:4px solid #16a34a;"
+            f"border-radius:0 12px 12px 0;padding:.85rem 1.2rem;margin-bottom:.75rem;'>"
+            f"<strong style='color:#14532d;'>📋 Crop Condition Summary</strong><br>"
+            f"<span style='font-size:.9rem;color:#374151;'>{e['crop_condition_summary']}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        if e.get("immediate_actions"):
+            st.markdown("**🚨 Immediate Actions**")
+            for a in e["immediate_actions"]:
+                st.markdown(f"- ✅ {a}")
+        if e.get("crop_care_tips"):
+            st.markdown("**🌱 Crop Care Tips**")
+            for t in e["crop_care_tips"]:
+                st.markdown(f"- 🌿 {t}")
+    with c2:
+        if e.get("preventive_measures"):
+            st.markdown("**🛡️ Prevention**")
+            for pv in e["preventive_measures"]:
+                st.markdown(f"- 🔒 {pv}")
+        if e.get("when_to_seek_expert_help"):
+            st.warning(f"👨‍🔬 {e['when_to_seek_expert_help']}")
+
+    if e.get("treatment_options"):
+        st.markdown("**💊 Treatment Options**")
+        for tr in e["treatment_options"]:
+            with st.expander(f"{tr.get('type', '?')} — {tr.get('name', '?')}"):
+                if tr.get("instructions"):
+                    st.markdown(f"📋 {tr['instructions']}")
+                if tr.get("ppe_required"):
+                    st.markdown(f"🥽 **PPE Required:** {tr['ppe_required']}")
+                if tr.get("environmental_notes"):
+                    st.markdown(f"🌍 {tr['environmental_notes']}")
+
+    rec  = e.get("estimated_recovery_time", "")
+    conf = e.get("advisory_confidence", "")
+    if rec or conf:
+        parts = []
+        if rec:
+            parts.append(f"⏱️ Recovery: <strong>{rec}</strong>")
+        if conf:
+            parts.append(f"Advisory Confidence: {_conf_badge(conf)}")
+        st.markdown(
+            f"<div style='background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;"
+            f"padding:.7rem 1rem;margin-top:.5rem;'>"
+            f"{'&nbsp;&nbsp;·&nbsp;&nbsp;'.join(parts)}</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        "<div style='background:#fffbeb;border:1px solid #fde047;border-left:4px solid #ca8a04;"
+        "border-radius:0 10px 10px 0;padding:.6rem 1rem;font-size:.78rem;color:#713f12;"
+        "margin-top:.6rem;'>⚠️ AI advisory — verify with a qualified agricultural extension officer "
+        "before acting.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_diagnosis_reports_section() -> None:
+    """
+    Render a full 'Recent Diagnosis Reports' section at the bottom of the
+    Performance Dashboard.  Each diagnosis row is a clickable expander that
+    shows the complete pathologist + extension officer report.
+    """
+    # ── Section banner ────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div style='background:linear-gradient(135deg,#052e16,#14532d);
+                    padding:1.4rem 2rem;border-radius:14px;margin-bottom:1.4rem;
+                    border:1px solid rgba(74,222,128,.15);'>
+            <div style='font-size:1.4rem;font-weight:900;color:#4ade80;margin-bottom:.3rem;'>
+                📋 Recent Diagnosis Reports
+            </div>
+            <div style='font-size:.85rem;color:rgba(255,255,255,.7);'>
+                Full AI-generated pathologist &amp; farm advisory reports from every
+                diagnosis stored in the database — click any row to expand.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Controls ──────────────────────────────────────────────────────────────
+    ctrl_l, ctrl_r = st.columns([2, 1])
+    with ctrl_l:
+        limit = st.selectbox(
+            "Show last N diagnoses",
+            options=[5, 10, 20, 50],
+            index=1,
+            key="dash_report_limit",
+        )
+    with ctrl_r:
+        show_raw = st.checkbox("Show raw combined report text", key="dash_show_raw")
+
+    diagnoses = get_recent_diagnoses(limit=limit)
+
+    if not diagnoses:
+        st.info("No diagnosis records yet. Run at least one crop diagnosis to populate this section.")
+        return
+
+    for idx, d in enumerate(diagnoses):
+        disease  = d.get("suspected_disease") or "Unknown Disease"
+        conf     = d.get("confidence_level") or "—"
+        status   = d.get("status") or "—"
+        filename = d.get("image_filename") or "—"
+        ts       = (d.get("created_at") or "")[:19]
+        proc_t   = d.get("processing_time_seconds") or 0.0
+
+        # Status colour
+        status_color = {
+            "completed": "#16a34a",
+            "partial":   "#d97706",
+            "failed":    "#dc2626",
+        }.get(status, "#6b7280")
+
+        expander_label = (
+            f"🌱 {disease}  ·  {_conf_badge(conf)}  ·  "
+            f"{ts}  ·  📁 {filename}"
+        )
+
+        with st.expander(expander_label, expanded=(idx == 0)):
+            # ── Header row ────────────────────────────────────────────────
+            h1, h2, h3 = st.columns([3, 1, 1])
+            with h1:
+                st.markdown(
+                    f"<div style='font-size:1.05rem;font-weight:800;color:#14532d;'>"
+                    f"🌱 {disease}</div>"
+                    f"<div style='font-size:.78rem;color:#6b7280;margin-top:3px;'>"
+                    f"🕒 {ts} &nbsp;·&nbsp; 📁 {filename} &nbsp;·&nbsp; "
+                    f"⚡ {proc_t:.1f}s</div>",
+                    unsafe_allow_html=True,
+                )
+            with h2:
+                st.markdown(
+                    f"<div style='margin-top:4px;'>Confidence: {_conf_badge(conf)}</div>",
+                    unsafe_allow_html=True,
+                )
+            with h3:
+                st.markdown(
+                    f"<div style='margin-top:4px;font-size:.82rem;font-weight:700;"
+                    f"color:{status_color};'>● {status.title()}</div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<hr style='margin:.6rem 0;border-color:#e5e7eb;'>", unsafe_allow_html=True)
+
+            # ── Pathologist report ─────────────────────────────────────────
+            path_json = d.get("pathologist_report")
+            ext_json  = d.get("extension_report")
+
+            p_rep: Dict = {}
+            e_rep: Dict = {}
+            if path_json:
+                try:
+                    p_rep = json.loads(path_json) if isinstance(path_json, str) else path_json
+                except (json.JSONDecodeError, TypeError):
+                    p_rep = {}
+            if ext_json:
+                try:
+                    e_rep = json.loads(ext_json) if isinstance(ext_json, str) else ext_json
+                except (json.JSONDecodeError, TypeError):
+                    e_rep = {}
+
+            if p_rep:
+                st.markdown(
+                    "<div style='font-size:.72rem;font-weight:700;letter-spacing:1.2px;"
+                    "text-transform:uppercase;color:#16a34a;margin-bottom:.4rem;'>"
+                    "🔬 Pathologist Report — Google Gemini Vision</div>",
+                    unsafe_allow_html=True,
+                )
+                _render_pathologist_card(p_rep)
+            else:
+                st.warning("Pathologist report not available for this diagnosis.")
+
+            if e_rep:
+                st.markdown(
+                    "<div style='font-size:.72rem;font-weight:700;letter-spacing:1.2px;"
+                    "text-transform:uppercase;color:#16a34a;margin:.8rem 0 .4rem;'>"
+                    "🌿 Farm Advisory — IBM Granite</div>",
+                    unsafe_allow_html=True,
+                )
+                _render_extension_card(e_rep)
+            else:
+                st.warning("Farm advisory report not available for this diagnosis.")
+
+            # ── Combined plain-text report ────────────────────────────────
+            combined = d.get("combined_report") or ""
+            if combined:
+                if show_raw:
+                    st.markdown("**📄 Full Combined Report (plain text)**")
+                    st.text_area(
+                        "Full report text",
+                        value=combined,
+                        height=300,
+                        key=f"dash_combined_{d.get('id', idx)}",
+                        label_visibility="collapsed",
+                        disabled=True,
+                    )
+                # Download button for each report
+                st.download_button(
+                    label="⬇️ Download Full Advisory (TXT)",
+                    data=combined.encode(),
+                    file_name=f"agri_advisory_{ts.replace(':', '-').replace(' ', '_')}.txt",
+                    mime="text/plain",
+                    key=f"dash_dl_{d.get('id', idx)}",
+                )
