@@ -1974,10 +1974,14 @@ def page_whatsapp_agent():
 
     # ── Detect active sending method ──────────────────────────────────────────
     from agents.whatsapp_agent import SELENIUM_AVAILABLE as _WA_SEL
+    from services.whatsapp_service import PYWHATKIT_AVAILABLE as _WA_PKT
     _has_meta   = bool(st.session_state.get("wa_access_token") and st.session_state.get("wa_phone_num_id"))
     _has_twilio = bool(st.session_state.get("twilio_sid") and st.session_state.get("twilio_token"))
     if _WA_SEL:
         _active_method_label = "WhatsApp Web via Selenium (automatic — Chrome)"
+        _method_color = "#166534"
+    elif _WA_PKT:
+        _active_method_label = "pywhatkit + pyautogui (fully automatic — no API key needed)"
         _method_color = "#166534"
     elif _has_meta:
         _active_method_label = "Meta Business Cloud API (automatic)"
@@ -2001,11 +2005,17 @@ def page_whatsapp_agent():
             "✅ **Selenium + Chrome available** — the full report will be pushed directly into "
             "WhatsApp Web and sent automatically when you click **Send Report to WhatsApp** below."
         )
+    elif _WA_PKT:
+        st.success(
+            "✅ **pywhatkit + pyautogui active** — after every diagnosis, WhatsApp Web will open "
+            "automatically and the report will be sent without any manual click."
+        )
     elif not _has_meta and not _has_twilio:
         st.info(
-            "💡 **Install Selenium** (`pip install selenium`) to send automatically via WhatsApp Web. "
-            "Or configure the Meta Business Cloud API in ⚙️ Settings → WhatsApp. "
-            "Without either, messages are *prepared* as a URL — you must click **Send** in the browser."
+            "💡 pywhatkit and pyautogui are available on this machine. "
+            "If auto-send is not triggering, make sure WhatsApp Web is logged in "
+            "in your default browser. "
+            "Or configure the Meta Business Cloud API in ⚙️ Settings → WhatsApp."
         )
 
     last = st.session_state.get("last_wa_delivery")

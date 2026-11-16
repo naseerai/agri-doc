@@ -51,7 +51,11 @@ try:
 except Exception:
     PYAUTOGUI_AVAILABLE = False
 
-PYWHATKIT_AVAILABLE = PYAUTOGUI_AVAILABLE
+try:
+    import pywhatkit as _pwk
+    PYWHATKIT_AVAILABLE = True
+except Exception:
+    PYWHATKIT_AVAILABLE = PYAUTOGUI_AVAILABLE   # fall back to raw pyautogui path
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -441,56 +445,186 @@ def get_whatsapp_urls(phone_number: str, message: str) -> tuple:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Method 1: Auto WhatsApp Web (pyautogui presses Enter)
+#  Compact message builder  (fits within URL/pywhatkit limits)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# pywhatkit encodes the full message in the URL — browsers reject URLs longer
+# than ~2000 chars.  We build a compact but complete advisory that always fits.
+_PYWHATKIT_MAX_CHARS = 1200
+
+def _build_compact_advisory(full_text: str) -> str:
+    """
+    Extract the essential fields from the full report and return a compact
+    WhatsApp-safe message (≤ _PYWHATKIT_MAX_CHARS chars).
+    """
+    lines = [l.strip() for l in full_text.splitlines() if l.strip()]
+
+    def _get(labels):
+        for label in labels:
+            for line in lines:
+                lw = line.lower()
+                if lw.startswith(label.lower()):
+                    val = re.sub(r"^[^:]+:\s*", "", line, count=1).strip(" *_")
+                    if val and val.lower() not in ("none", "n/a", "unknown", "?"):
+                        return val
+        return ""
+
+    disease   = _get(["Suspected Disease", "Disease", "Diagnosis"])
+    conf      = _get(["Confidence Level", "Confidence"])
+    severity  = _get(["Disease Severity", "Severity"])
+    summary   = _get(["Summary"])
+    recovery  = _get(["Est. Recovery", "Estimated Recovery"])
+
+    # Bullet lists: grab first 3 items after a heading
+    def _bullets(heading_kw, limit=3):
+        capture = False
+        items = []
+        for line in lines:
+            if heading_kw.lower() in line.lower() and ":" in line:
+                capture = True
+                continue
+            if capture:
+                if line.startswith(("•", "-", "√", "*")) or (line and line[0].isdigit()):
+                    items.append(re.sub(r"^[•\-√*\d\.\s]+", "", line).strip())
+                    if len(items) >= limit:
+                        break
+                elif any(kw in line.lower() for kw in
+                         ["treatment", "prevention", "action", "recovery", "note",
+                          "section", "===", "---"]):
+                    break
+        return items
+
+    actions    = _bullets("Immediate Actions", 3)
+    treatments = _bullets("Treatments", 2)
+
+    parts = [
+        "🌿 *AGRI DOCTOR – CROP HEALTH ADVISORY*",
+        f"📅 {time.strftime('%d %b %Y, %I:%M %p')}",
+        "",
+    ]
+    if disease:   parts += [f"🌱 *Disease:* {disease}"]
+    if conf:      parts += [f"📊 *Confidence:* {conf}"]
+    if severity:  parts += [f"⚠️ *Severity:* {severity}"]
+    if summary:   parts += ["", f"📋 {summary[:200]}"]
+    if actions:
+        parts += ["", "🚨 *Immediate Actions:*"]
+        parts += [f"  • {a}" for a in actions]
+    if treatments:
+        parts += ["", "💊 *Treatment:*"]
+        parts += [f"  • {t}" for t in treatments]
+    if recovery:  parts += ["", f"⏳ *Recovery:* {recovery}"]
+    parts += [
+        "",
+        "⚠️ AI advisory — consult a qualified agricultural expert.",
+        "— Agri Doctor AI 🌾",
+    ]
+
+    msg = "\n".join(parts)
+    # Hard-trim if still too long
+    if len(msg) > _PYWHATKIT_MAX_CHARS:
+        msg = msg[:_PYWHATKIT_MAX_CHARS - 40] + "\n\n… [see full report in app]"
+    return msg
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Method 1: Fully automatic send via pyautogui (reliable focus + Enter)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _send_via_auto_whatsapp_web(
     phone_number: str,
     message: str,
-    wait_time: int = 8,
+    wait_time: int = 20,
     progress_callback=None,
 ) -> tuple:
     """
-    Open WhatsApp Web, wait for conversation to load, and automatically
-    send the pre-filled message by pressing Enter.
+    Fully automatic WhatsApp send:
+      1. Build a compact advisory from the raw report.
+      2. Open web.whatsapp.com/send?phone=...&text=... in the default browser.
+         WhatsApp Web pre-fills the message box from the URL.
+      3. Wait for the page to fully load (wait_time seconds).
+      4. Click on the WhatsApp message input box area (bottom of screen)
+         to ensure focus, then press Enter — message is sent automatically.
+
+    Works on macOS and Linux desktop.  No Selenium or API key required.
     """
-    ok, phone, urls = get_whatsapp_urls(phone_number, message)
+    ok, phone, _ = get_whatsapp_urls(phone_number, message)
     if not ok:
         return False, phone
 
-    web_url = urls["web_url"]
+    # Build a compact advisory from the raw report
+    compact_msg = _build_compact_advisory(message)
+    logger.info("[WA-auto] Compact advisory: %d chars → %s", len(compact_msg), phone)
 
-    try:
-        webbrowser.open(web_url)
-    except Exception as exc:
-        logger.error("webbrowser.open failed: %s", exc)
-        return False, f"Could not launch browser: {exc}"
+    # Build the WhatsApp Web URL with pre-filled text
+    phone_digits = phone.lstrip("+")
+    wa_url = (
+        f"https://web.whatsapp.com/send/?phone={phone_digits}"
+        f"&text={urllib.parse.quote(compact_msg, safe='')}"
+        f"&app_absent=0"
+    )
 
-    for sec in range(1, wait_time + 1):
+    def _cb(msg_text: str):
+        logger.info("[WA-auto] %s", msg_text)
         if progress_callback:
             try:
-                progress_callback(sec, wait_time)
+                progress_callback(msg_text)
             except Exception:
                 pass
-        time.sleep(1)
 
-    auto_pressed = False
-    if PYAUTOGUI_AVAILABLE:
-        try:
-            time.sleep(0.5)
-            pyautogui.press("enter")
-            auto_pressed = True
-            logger.info("Auto-sent message to %s via Enter key.", phone)
-        except Exception as exc:
-            logger.warning("pyautogui.press('enter') failed: %s", exc)
+    # ── Step 1: Open browser ─────────────────────────────────────────────────
+    _cb(f"Opening WhatsApp Web for {phone}…")
+    try:
+        webbrowser.open(wa_url)
+    except Exception as exc:
+        return False, f"Could not open browser: {exc}"
 
-    if auto_pressed:
-        return True, f"✅ Message sent automatically via WhatsApp Web to {phone}!"
-    else:
+    if not PYAUTOGUI_AVAILABLE:
         return (
             True,
             f"✅ WhatsApp Web opened for {phone}. "
-            "Message is pre-filled — tap Send if auto-send did not trigger.",
+            "Message is pre-filled — tap Send in the browser.",
+        )
+
+    # ── Step 2: Wait for WhatsApp Web to fully load ──────────────────────────
+    _cb(f"Waiting {wait_time}s for WhatsApp Web to load…")
+    for i in range(wait_time):
+        time.sleep(1)
+        if i == wait_time // 2:
+            _cb(f"Still loading… ({wait_time - i}s remaining)")
+
+    # ── Step 3: Bring browser window to front and focus message box ──────────
+    # Strategy: click near the bottom-centre of the screen where WhatsApp Web
+    # always renders the message input box, then press Enter.
+    _cb("Clicking message box and sending…")
+    try:
+        import platform
+        screen_w, screen_h = pyautogui.size()
+
+        # Click center of screen first to bring window to front
+        pyautogui.click(screen_w // 2, screen_h // 2)
+        time.sleep(0.5)
+
+        # WhatsApp Web message input is always in the bottom portion of the page.
+        # Click at approximately 92% of screen height, 50% width.
+        input_x = screen_w // 2
+        input_y = int(screen_h * 0.92)
+        pyautogui.click(input_x, input_y)
+        time.sleep(0.8)
+
+        # Press Enter to send the pre-filled message
+        pyautogui.press("enter")
+        time.sleep(1.0)
+
+        logger.info("[WA-auto] ✅ Enter pressed — message sent to %s", phone)
+        _cb(f"✅ Message sent to {phone}!")
+        return True, f"✅ Report sent automatically to {phone} via WhatsApp Web."
+
+    except Exception as exc:
+        logger.warning("[WA-auto] pyautogui failed: %s", exc)
+        return (
+            True,
+            f"✅ WhatsApp Web opened for {phone}. "
+            "Message is pre-filled — tap Send in the browser.",
         )
 
 

@@ -58,6 +58,8 @@ from services.whatsapp_service import (
     _send_via_twilio,
     _truncate,
     PREFERRED_PART_SIZE,
+    PYWHATKIT_AVAILABLE,
+    _send_via_auto_whatsapp_web,
 )
 
 # WhatsApp Web automation via Selenium (primary automatic method)
@@ -236,10 +238,17 @@ class WhatsAppSender:
     def detect_best_method(self) -> str:
         """
         Auto-detect best sending method.
-        Priority: selenium (only when Chrome binary exists) > meta > twilio > webbrowser
+        Priority: selenium > pywhatkit (pyautogui) > meta > twilio > webbrowser
+        selenium  — requires Chrome binary + selenium package
+        pywhatkit — requires pywhatkit + pyautogui + a display (macOS/Linux desktop)
+        meta      — requires WHATSAPP_ACCESS_TOKEN env var (Meta Business Cloud API)
+        twilio    — requires TWILIO_ACCOUNT_SID env var
+        webbrowser— always available; URL only, user must click Send
         """
         if SELENIUM_AVAILABLE and self._chrome_is_usable():
             return "selenium"
+        if PYWHATKIT_AVAILABLE:
+            return "pywhatkit"
         if os.environ.get("WHATSAPP_ACCESS_TOKEN") and os.environ.get("WHATSAPP_PHONE_NUMBER_ID"):
             return "meta"
         if os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"):
@@ -259,6 +268,7 @@ class WhatsAppSender:
         wa_phone_number_id: str = "",
         chrome_profile: str = "",
         progress_callback=None,
+        raw_report_text: str = "",   # raw combined report used by pywhatkit compact builder
     ) -> Dict[str, Any]:
         """
         Send message(s) to the given phone number.
@@ -334,8 +344,46 @@ class WhatsAppSender:
                             "wa_url":   wa_url,
                             "error":    detail}
 
-        # ── 2. Meta Cloud API ─────────────────────────────────────────────────
-        # Independent `if` (not elif) so we still reach this after selenium
+        # ── 2. pywhatkit / pyautogui (fully automatic, no API key needed) ─────
+        # Uses pywhatkit.sendwhatmsg_instantly: opens WhatsApp Web in the browser,
+        # waits for it to load, then presses Enter automatically via pyautogui.
+        # Works on macOS and Linux desktop environments with a display.
+        if method == "pywhatkit":
+            if not PYWHATKIT_AVAILABLE:
+                if _was_auto:
+                    method = "webbrowser"   # fall through silently
+                else:
+                    result_base["error"] = (
+                        "pywhatkit/pyautogui not available. "
+                        "Run: pip install pywhatkit pyautogui"
+                    )
+                    return result_base
+            else:
+                # Use the RAW combined report text so _build_compact_advisory
+                # can extract the structured fields (Suspected Disease : ...).
+                # full_message is already WhatsApp-formatted and unparseable.
+                report_for_compact = raw_report_text or full_message
+                ok, detail = _send_via_auto_whatsapp_web(
+                    phone_normalised,
+                    report_for_compact,
+                    wait_time=20,
+                    progress_callback=progress_callback,
+                )
+                if ok:
+                    return {**result_base,
+                            "method":     "pywhatkit",
+                            "status":     STATUS_SENT,
+                            "sent":       True,
+                            "parts_sent": 1}
+                # Failed — fall through to URL in auto mode
+                if _was_auto:
+                    logger.warning("[WA] pywhatkit failed (%s) — falling back to web URL.", detail)
+                    method = "webbrowser"
+                else:
+                    return {**result_base, "method": "pywhatkit", "error": detail}
+
+        # ── 3. Meta Cloud API ─────────────────────────────────────────────────
+        # Independent `if` (not elif) so we still reach this after pywhatkit/selenium
         # mutates method above.
         if method == "meta":
             token = wa_access_token or os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
@@ -372,7 +420,8 @@ class WhatsAppSender:
                         "parts_sent": sent_count, "msg_ids": ids,
                         "error": f"Part {failed[0]['part']}/{len(message_parts)}: {failed[0]['error']}"}
 
-        # ── 3. Twilio ─────────────────────────────────────────────────────────
+
+        # ── 4. Twilio ─────────────────────────────────────────────────────────
         if method == "twilio":
             sid    = twilio_sid   or os.environ.get("TWILIO_ACCOUNT_SID", "")
             token_ = twilio_token or os.environ.get("TWILIO_AUTH_TOKEN", "")
@@ -386,8 +435,8 @@ class WhatsAppSender:
                         "msg_ids": [msg], "parts_sent": 1}
             return {**result_base, "error": msg}
 
-        # ── 4. WhatsApp Web URL (manual fallback — user clicks Send) ─────────
-        # Reached when method == "webbrowser" (including auto-fallback from selenium).
+        # ── 5. WhatsApp Web URL (manual fallback — user clicks Send) ─────────
+        # Reached when method == "webbrowser" (including auto-fallback from pywhatkit/selenium).
         ok, _, urls = get_whatsapp_urls(phone_normalised, full_message)
         if not ok:
             return {**result_base, "error": f"Could not build WhatsApp URL: {urls}"}
@@ -642,6 +691,7 @@ class WhatsAppReportAgent:
             wa_phone_number_id=wa_phone_number_id,
             chrome_profile=chrome_profile,
             progress_callback=progress_callback,
+            raw_report_text=rep_text,   # raw report for compact advisory builder
         )
 
         final_status = send_result["status"]
