@@ -527,6 +527,9 @@ def _init():
         "wa_phone_num_id":  "",
         # WhatsApp Agent
         "last_wa_delivery": None,   # Dict from WhatsAppReportAgent.run()
+        # Navigation flag: set True by Quick Action buttons so the sidebar
+        # radio syncs to the new page on the next rerun.
+        "_nav_programmatic": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -620,6 +623,26 @@ def _sidebar():
         pages = ["🏠 Home","🔬 Diagnose Crop","🤖 Agent Workflow",
                  "📱 WhatsApp Agent","📋 History","📊 Performance",
                  "🛡️ Guardrails","⚙️ Settings"]
+
+        # Sync sidebar radio only when a button (not a sidebar click) changed the
+        # page.  When the user clicks a sidebar item Streamlit already updates
+        # st.session_state["nav"] to the new value before this code runs, so
+        # nav != page at that point.  We must NOT overwrite nav in that case or
+        # the sidebar click gets swallowed.
+        # When a Quick-Action button runs:  page is updated, nav is still the old
+        # value → they differ → we sync nav ← page so the radio highlights correctly.
+        current_page = st.session_state.get("page", "🏠 Home")
+        current_nav  = st.session_state.get("nav",  "🏠 Home")
+        # Only sync nav from page when page is NOT already what nav says
+        # AND nav still matches page (meaning nav hasn't been changed by a sidebar click).
+        # Simpler rule: sync nav ← page whenever page is valid and differs from nav.
+        # Sidebar clicks set nav first (before rerun), so after a sidebar click
+        # current_nav == new_page and current_page == old_page → they differ but
+        # we should trust nav, not page.  We distinguish by using a flag.
+        if st.session_state.get("_nav_programmatic") and current_page in pages:
+            st.session_state["nav"] = current_page
+        st.session_state["_nav_programmatic"] = False   # reset after every render
+
         sel = st.radio("", pages, key="nav", label_visibility="collapsed")
         st.session_state.page = sel
 
@@ -895,13 +918,19 @@ def page_home():
     with act:
         st.markdown("<div class='sec-head'>⚡ Quick Actions</div>", unsafe_allow_html=True)
         if st.button("🔬  Diagnose a Crop", use_container_width=True, type="primary"):
-            st.session_state.page = "🔬 Diagnose Crop"; st.rerun()
+            st.session_state.page = "🔬 Diagnose Crop"
+            st.session_state["_nav_programmatic"] = True
+            st.rerun()
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("📋  View History", use_container_width=True):
-            st.session_state.page = "📋 History"; st.rerun()
+            st.session_state.page = "📋 History"
+            st.session_state["_nav_programmatic"] = True
+            st.rerun()
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("⚙️  Settings", use_container_width=True):
-            st.session_state.page = "⚙️ Settings"; st.rerun()
+            st.session_state.page = "⚙️ Settings"
+            st.session_state["_nav_programmatic"] = True
+            st.rerun()
 
     with how:
         st.markdown("<div class='sec-head'>📖 How It Works</div>", unsafe_allow_html=True)

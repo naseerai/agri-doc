@@ -216,12 +216,29 @@ class WhatsAppSender:
     Method 4 is labelled Prepared.
     """
 
+    @staticmethod
+    def _chrome_is_usable() -> bool:
+        """
+        Return True only when Chrome (or Chromium) is actually executable.
+        SELENIUM_AVAILABLE only tells us the Python package is installed — the
+        binary might still be missing (e.g. Streamlit Cloud, Docker without Chrome).
+        Status code 127 from the OS means 'command not found'.
+        """
+        import shutil
+        return bool(
+            shutil.which("google-chrome") or
+            shutil.which("google-chrome-stable") or
+            shutil.which("chromium") or
+            shutil.which("chromium-browser") or
+            shutil.which("chrome")
+        )
+
     def detect_best_method(self) -> str:
         """
         Auto-detect best sending method.
-        Priority: selenium > meta > twilio > webbrowser
+        Priority: selenium (only when Chrome binary exists) > meta > twilio > webbrowser
         """
-        if SELENIUM_AVAILABLE:
+        if SELENIUM_AVAILABLE and self._chrome_is_usable():
             return "selenium"
         if os.environ.get("WHATSAPP_ACCESS_TOKEN") and os.environ.get("WHATSAPP_PHONE_NUMBER_ID"):
             return "meta"
@@ -260,6 +277,9 @@ class WhatsAppSender:
           "error":       str,
         }
         """
+        # Remember whether the caller asked for "auto" so we can fall through
+        # to the web-URL method if selenium is selected but Chrome isn't usable.
+        _was_auto = (method == "auto")
         if method == "auto":
             method = self.detect_best_method()
 
@@ -276,37 +296,48 @@ class WhatsAppSender:
         }
 
         # ── 1. WhatsApp Web via Selenium (primary automatic method) ───────────
+        # This block may mutate `method` to "webbrowser" and fall through, so
+        # the subsequent blocks use independent `if` checks (not elif/else).
         if method in ("selenium", "whatsapp-web", "wa-web"):
             if not SELENIUM_AVAILABLE:
-                result_base["error"] = (
-                    "Selenium is not installed. "
-                    "Run: pip install selenium"
+                if _was_auto:
+                    method = "webbrowser"           # fall through silently
+                else:
+                    result_base["error"] = (
+                        "Selenium is not installed. Run: pip install selenium"
+                    )
+                    return result_base
+            else:
+                ok, detail = push_report_to_whatsapp_web(
+                    phone_number=phone_normalised,
+                    message_parts=message_parts,
+                    chrome_profile=chrome_profile,
+                    progress_callback=progress_callback,
                 )
-                return result_base
+                if ok:
+                    return {**result_base,
+                            "method":     "selenium",
+                            "status":     STATUS_SENT,
+                            "sent":       True,
+                            "parts_sent": len(message_parts)}
+                # Selenium ran but Chrome/chromedriver crashed (e.g. status 127).
+                # In auto mode fall through silently to the URL fallback.
+                if _was_auto:
+                    logger.warning("[WA] Selenium failed (%s) — falling back to web URL.", detail)
+                    method = "webbrowser"
+                else:
+                    _, _, urls = get_whatsapp_urls(phone_normalised, full_message)
+                    wa_url = urls.get("wa_me", urls.get("web_url", "")) if urls else ""
+                    return {**result_base,
+                            "method":   "selenium",
+                            "status":   STATUS_FAILED,
+                            "wa_url":   wa_url,
+                            "error":    detail}
 
-            ok, detail = push_report_to_whatsapp_web(
-                phone_number=phone_normalised,
-                message_parts=message_parts,
-                chrome_profile=chrome_profile,
-                progress_callback=progress_callback,
-            )
-            if ok:
-                return {**result_base,
-                        "method":     "selenium",
-                        "status":     STATUS_SENT,
-                        "sent":       True,
-                        "parts_sent": len(message_parts)}
-            # If selenium failed, build the wa.me URL as fallback
-            _, _, urls = get_whatsapp_urls(phone_normalised, full_message)
-            wa_url = urls.get("wa_me", urls.get("web_url", "")) if urls else ""
-            return {**result_base,
-                    "method":   "selenium",
-                    "status":   STATUS_FAILED,
-                    "wa_url":   wa_url,
-                    "error":    detail}
-
-        # ── 2. Meta Cloud API ──────────────────────────────────────────────────
-        elif method == "meta":
+        # ── 2. Meta Cloud API ─────────────────────────────────────────────────
+        # Independent `if` (not elif) so we still reach this after selenium
+        # mutates method above.
+        if method == "meta":
             token = wa_access_token or os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
             ph_id = wa_phone_number_id or os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 
@@ -341,8 +372,8 @@ class WhatsAppSender:
                         "parts_sent": sent_count, "msg_ids": ids,
                         "error": f"Part {failed[0]['part']}/{len(message_parts)}: {failed[0]['error']}"}
 
-        # ── 3. Twilio ──────────────────────────────────────────────────────────
-        elif method == "twilio":
+        # ── 3. Twilio ─────────────────────────────────────────────────────────
+        if method == "twilio":
             sid    = twilio_sid   or os.environ.get("TWILIO_ACCOUNT_SID", "")
             token_ = twilio_token or os.environ.get("TWILIO_AUTH_TOKEN", "")
             from_  = twilio_from  or os.environ.get("TWILIO_FROM_NUMBER", "whatsapp:+14155238886")
@@ -355,16 +386,15 @@ class WhatsAppSender:
                         "msg_ids": [msg], "parts_sent": 1}
             return {**result_base, "error": msg}
 
-        # ── 4. WhatsApp Web URL (manual fallback — user clicks Send) ──────────
-        else:
-            ok, _, urls = get_whatsapp_urls(phone_normalised, full_message)
-            if not ok:
-                return {**result_base, "error": f"Could not build WhatsApp URL: {urls}"}
-            # Use the official wa.me click-to-chat URL as the primary link
-            return {**result_base,
-                    "status":   STATUS_PREPARED,
-                    "prepared": True,
-                    "wa_url":   urls["wa_me"]}
+        # ── 4. WhatsApp Web URL (manual fallback — user clicks Send) ─────────
+        # Reached when method == "webbrowser" (including auto-fallback from selenium).
+        ok, _, urls = get_whatsapp_urls(phone_normalised, full_message)
+        if not ok:
+            return {**result_base, "error": f"Could not build WhatsApp URL: {urls}"}
+        return {**result_base,
+                "status":   STATUS_PREPARED,
+                "prepared": True,
+                "wa_url":   urls["wa_me"]}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

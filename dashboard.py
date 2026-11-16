@@ -423,58 +423,113 @@ def _render_agent_comparison_tab(path_metrics, ext_metrics):
 
 def _render_simulated_eval_section():
     """
-    Display simulated/illustrative NLP evaluation metrics with clear labelling.
-    These are NOT computed against verified ground-truth data.
+    Display real workflow health metrics derived from the live database.
+    All values are computed from actual recorded data — no simulated numbers.
     """
-    st.subheader("🔶 NLP Evaluation Metrics (Illustrative — Not Verified Ground Truth)")
-    st.warning(
-        "The metrics below are **SIMULATED** for display purposes only. "
-        "They do NOT represent verified accuracy against labelled test data. "
-        "To compute real evaluation metrics, upload a verified ground-truth dataset "
-        "in the Settings page (future feature)."
+    from database import get_recent_diagnoses, get_agent_metrics, get_guardrail_events
+
+    st.subheader("📈 Workflow Health Metrics (Real-Time)")
+    st.info(
+        "All values below are computed from your actual diagnosis history and agent execution "
+        "records stored in the local database. No simulated or placeholder data is shown."
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        metrics_data = {
-            "Metric": ["Accuracy", "Precision", "Recall", "F1 Score", "Semantic Similarity"],
-            "Pathologist (Simulated)": [0.82, 0.79, 0.85, 0.82, 0.88],
-            "Extension Officer (Simulated)": [0.78, 0.76, 0.81, 0.78, 0.84],
-        }
-        df_sim = pd.DataFrame(metrics_data)
-        fig = px.bar(
-            df_sim.melt(id_vars="Metric", var_name="Agent", value_name="Score"),
-            x="Metric", y="Score", color="Agent", barmode="group",
-            color_discrete_map={
-                "Pathologist (Simulated)": COLOR_PATH,
-                "Extension Officer (Simulated)": COLOR_EXT,
-            },
-            title="Simulated NLP Evaluation Metrics",
-            range_y=[0, 1],
-        )
-        fig.update_layout(
-            plot_bgcolor=PLOT_BG, paper_bgcolor=BG_COLOR,
-            font=dict(color="#1c2e1e"),
-            xaxis=dict(gridcolor=GRID_COLOR, linecolor="#c0ccc1"),
-            yaxis=dict(gridcolor=GRID_COLOR, linecolor="#c0ccc1"),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # ── Load real data ────────────────────────────────────────────────────────
+    all_diagnoses = get_recent_diagnoses(limit=1000)
+    all_metrics   = get_agent_metrics(days=90)
+    all_guardrails = get_guardrail_events(days=90)
 
+    total        = len(all_diagnoses)
+    completed    = sum(1 for d in all_diagnoses if d.get("status") == "completed")
+    partial      = sum(1 for d in all_diagnoses if d.get("status") == "partial")
+    failed_diag  = sum(1 for d in all_diagnoses if d.get("status") == "failed")
+
+    path_calls   = [m for m in all_metrics if m.get("agent_name") == "pathologist"]
+    ext_calls    = [m for m in all_metrics if m.get("agent_name") == "extension_officer"]
+
+    path_success = sum(1 for m in path_calls if m.get("api_status") == "success")
+    ext_success  = sum(1 for m in ext_calls  if m.get("api_status") == "success")
+
+    path_rate = round(path_success / len(path_calls) * 100, 1) if path_calls else None
+    ext_rate  = round(ext_success  / len(ext_calls)  * 100, 1) if ext_calls  else None
+    task_rate = round(completed / total * 100, 1) if total else None
+    gr_rate   = round(len(all_guardrails) / total * 100, 1) if total else None
+
+    if total == 0:
+        st.warning("No diagnosis records yet. Run at least one diagnosis to populate these metrics.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    # ── Left: API success rate bar chart ────────────────────────────────────
+    with col1:
+        agents, success_rates = [], []
+        if path_calls:
+            agents.append("Pathologist\n(Gemini)")
+            success_rates.append(path_rate)
+        if ext_calls:
+            agents.append("Extension Officer\n(IBM Granite)")
+            success_rates.append(ext_rate)
+
+        if agents:
+            fig = px.bar(
+                x=agents,
+                y=success_rates,
+                color=agents,
+                color_discrete_sequence=[COLOR_PATH, COLOR_EXT],
+                title="Agent API Success Rate (%) — MEASURED",
+                labels={"x": "Agent", "y": "Success Rate (%)"},
+                range_y=[0, 100],
+                text=success_rates,
+            )
+            fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig.update_layout(
+                plot_bgcolor=PLOT_BG, paper_bgcolor=BG_COLOR,
+                showlegend=False,
+                font=dict(color="#1c2e1e"),
+                xaxis=dict(gridcolor=GRID_COLOR, linecolor="#c0ccc1"),
+                yaxis=dict(gridcolor=GRID_COLOR, linecolor="#c0ccc1"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No agent execution data yet.")
+
+    # ── Right: real workflow metrics table ───────────────────────────────────
     with col2:
+        rows = [
+            ("Task Completion Rate",
+             f"{task_rate}%" if task_rate is not None else "—",
+             "MEASURED"),
+            ("Completed Diagnoses",
+             str(completed),
+             "MEASURED"),
+            ("Partial Diagnoses (1 agent)",
+             str(partial),
+             "MEASURED"),
+            ("Failed Diagnoses",
+             str(failed_diag),
+             "MEASURED"),
+            ("Pathologist API Success Rate",
+             f"{path_rate}%" if path_rate is not None else "No data",
+             "MEASURED" if path_calls else "NO DATA"),
+            ("Extension Officer API Success Rate",
+             f"{ext_rate}%" if ext_rate is not None else "No data",
+             "MEASURED" if ext_calls else "NO DATA"),
+            ("Total Guardrail Events (90 days)",
+             str(len(all_guardrails)),
+             "MEASURED"),
+            ("Guardrail Rate per Diagnosis",
+             f"{gr_rate}%" if gr_rate is not None else "—",
+             "MEASURED"),
+        ]
         workflow_data = {
-            "Metric": [
-                "Task Completion Rate", "Agent Coordination Score",
-                "Handoff Accuracy", "Tool Execution Success",
-                "Hallucination Rate", "Guardrail Intervention Rate",
-            ],
-            "Value (Simulated)": ["91%", "87%", "94%", "96%", "4%", "3%"],
-            "Status": [
-                "SIMULATED", "SIMULATED", "SIMULATED",
-                "SIMULATED", "SIMULATED", "SIMULATED",
-            ],
+            "Metric":  [r[0] for r in rows],
+            "Value":   [r[1] for r in rows],
+            "Source":  [r[2] for r in rows],
         }
         st.dataframe(pd.DataFrame(workflow_data), use_container_width=True)
         st.caption(
-            "🔶 All values above are illustrative. Future releases will compute "
-            "these from verified test cases stored in the database."
+            "🟢 All values above are computed from live database records. "
+            "NLP ground-truth metrics (Accuracy, Precision, F1) require a labelled "
+            "test dataset and are not displayed until one is provided."
         )
